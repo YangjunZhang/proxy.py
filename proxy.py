@@ -25,6 +25,10 @@ import logging
 import socket
 import select
 
+from CacheManage import CacheManage
+
+CM = CacheManage()
+
 logger = logging.getLogger(__name__)
 
 # True if we are running on Python 3.
@@ -366,7 +370,13 @@ class Proxy(multiprocessing.Process):
             if self.request.method == b"CONNECT":
                 host, port = self.request.url.path.split(COLON)
             elif self.request.url:
-                host, port = self.request.url.hostname, self.request.url.port if self.request.url.port else 80
+                host = None
+                if self.request.method == "GET":
+                    host, port, url = CM.cacheLookUp(self.client.addr, self.request.url)
+                if(host == None):
+                    host, port = self.request.url.hostname, self.request.url.port if self.request.url.port else 80
+                print "### request url ###",self.request.url
+
             
             self.server = Server(host, port)
             try:
@@ -546,6 +556,8 @@ class HTTP(TCP):
         logger.debug('Started process %r to handle connection %r' % (proc, client.conn))
 
 def main():
+    
+    print CM.info()
     parser = argparse.ArgumentParser(
         description='proxy.py v%s' % __version__,
         epilog='Having difficulty using proxy.py? Report at: %s/issues/new' % __homepage__
