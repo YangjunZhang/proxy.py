@@ -372,11 +372,11 @@ class Proxy(multiprocessing.Process):
             elif self.request.url:
                 host = None
                 if self.request.method == "GET":
-                    host, port, url = CM.cacheLookUp(self.client.addr, self.request.url)
-                if(host == None):
+                    host, port = CM.cacheLookUp(self.client.addr, self.request.url)
+                if host == None:
                     host, port = self.request.url.hostname, self.request.url.port if self.request.url.port else 80
-                print "### request url ###",self.request.url
-
+                # print "### request url ###",self.request.url
+                logger.info("%s:%s - %s, redirect %s to %s:%s" % (self.client.addr[0], self.client.addr[1], self.request.url.path, self.request.url.netloc, host, port))
             
             self.server = Server(host, port)
             try:

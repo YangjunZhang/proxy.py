@@ -1,6 +1,8 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
+import re
+
 TableEntrySize = 5
 
 
@@ -28,7 +30,7 @@ class TableEntry(object):
 		self.fileSize = fileSize
 
 	def __str__(self):
-		tag = '    '
+		tag = ' | '
 		return self.cacheID + tag + self.server + tag + str(self.port) + tag \
    + str(self.requestCnt) + tag + str(self.fileSize)
 
@@ -45,6 +47,7 @@ class CacheManage(object):
 		self.cachedTab = {}
 		self.missTab = {}
 		self.urlMatchKeyArr = []  # regex
+		self.compiledRegexArr = []
 
 		# self.addEntry(self.cachedTab, "a.txt", "127.0.0.1", 8081, 0, 1024)
 		# self.addEntry(self.missTab, "nocache.txt", None, None, 0, 1024)
@@ -55,7 +58,7 @@ class CacheManage(object):
 
 		# self.tag     = '\t'
 
-		self.tag = '    '
+		self.tag = ' | '
 
 	def addEntry(
 		self,
@@ -66,6 +69,7 @@ class CacheManage(object):
 		requestCnt,
 		fileSize,
 		):
+
 		te = TableEntry(cacheID, server, port, requestCnt, fileSize)
 		table[cacheID] = te
 
@@ -93,22 +97,30 @@ class CacheManage(object):
 
 		return (None, None)
 
+	def compileRegexKey(self):
+		self.compiledRegexArr = []
+		for itm in self.urlMatchKeyArr:
+			self.compiledRegexArr.append(re.compile(itm))
+
 	def parseURLKey(self, path):
 
 		# key = None
 
-		if path == '/a.txt':
-			return 'a.txt'
+		for reg in self.compiledRegexArr:
+			m = reg.match(path).group()
+			if m and m[0] == '/':
+				return m[1:]
 		return None
 
 	def cacheLookUp(self, clientAddr, url):
-		print '##clientAddr: ', clientAddr, ' url:', url
+		# print '##clientAddr: ', clientAddr, ' url:', url
 		key = self.parseURLKey(url.path)
-		(host, port) = queryCacheID(key)
 
-		# host, port, url
+		# print '##find key', key
 
-		return (host, port, key)
+		(host, port) = self.queryCacheID(key)
+
+		return (host, port)
 
 	def loadConfig(self, fileName):
 		try:
@@ -122,7 +134,9 @@ class CacheManage(object):
 				while line != '' and self.missTab_key not in line:
 					line = line[0:len(line) - 1]
 					itms = line.split(self.tag)
+
 					# print itms
+
 					if len(itms) == TableEntrySize:
 						self.addEntry(
 							self.cachedTab,
@@ -155,17 +169,26 @@ class CacheManage(object):
 				while line != '':
 					line = line[0:len(line) - 1]
 					itms = line.split(self.tag)
+
 					# print itms
+
 					if itms[0] == 'regex':
 						self.urlMatchKeyArr.append(itms[1])
 					line = filein.readline()
-			
+			self.compileRegexKey()
+
 			print self.cachedTab_key
-			print self.cachedTab
+			for itm in self.cachedTab:
+				print self.cachedTab[itm]
+			print
 			print self.missTab_key
-			print self.missTab
+			for itm in self.missTab:
+				print self.missTab[itm]
+			print
 			print self.urlMatch_key
-			print self.urlMatchKeyArr
+			for itm in self.urlMatchKeyArr:
+				print itm
+			print
 			filein.close()
 
 			return True
@@ -188,11 +211,11 @@ class CacheManage(object):
 
 		print >> fileout, self.urlMatch_key
 		for itm in self.urlMatchKeyArr:
-			print >> fileout, 'regex'+ self.tag + itm
+			print >> fileout, 'regex' + self.tag + itm
 		print >> fileout
-		
+
 		fileout.close()
-		print "configure file out"
+		print 'configure file out'
 
 	def downloadCache():
 		pass
