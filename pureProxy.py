@@ -25,9 +25,7 @@ import logging
 import socket
 import select
 
-from CacheManage import CacheManage
-
-CM = CacheManage()
+import re
 
 logger = logging.getLogger(__name__)
 
@@ -296,6 +294,72 @@ class Server(Connection):
         self.conn = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.conn.connect((self.addr[0], self.addr[1]))
 
+cacheServerHost = "127.0.0.1"
+cacheServerPort = "80"
+regexRules= "/[a-zA-Z][a-zA-Z0-9]*\.txt"
+regexKey = re.compile(regexRules)
+def parseURLKey( path):
+    # key = None
+    # for reg in self.compiledRegexArr:
+    m = regexKey.match(path).group()
+    if m and m[0] == '/':
+        return m[1:]
+    return None
+
+
+class CacheManage(Connection):
+    """Establish connection to destination server."""
+    
+    # def __init__(self, host, port):
+    def __init__(self):
+        super( CacheManage, self).__init__(b'cache server')
+        self.addr = (cacheServerHost, int(cacheServerPort))
+        # self.compileRegexKey()
+        # self.conn = None
+
+    def connect(self):
+        self.conn = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.conn.connect((self.addr[0], self.addr[1]))
+
+    # def compileRegexKey(self):
+    #     regexRules= "/[a-zA-Z][a-zA-Z0-9]*\.txt"
+    #     self.regexKey = re.compile(regexRules)
+
+    # def parseURLKey(self, path):
+    #     # key = None
+    #     # for reg in self.compiledRegexArr:
+    #     m = self.regexKey.match(path).group()
+    #     if m and m[0] == '/':
+    #         return m[1:]
+    #     return None
+
+    def buildQueryMethod(self, cacheId):
+        #method bs url bs version crlf 
+        #others crlf
+        #crlf
+        blankSpace = " "
+        method = "GET"
+        version = "HTTP/1.1"
+        url = "/ProxyController/query?cacheId=" + cacheId
+        return b" ".join([method, url, version]) + CRLF + CRLF
+
+    def buildDownloadMethod(self, cacheId):
+        #method bs url bs version crlf 
+        #others crlf
+        #crlf
+        blankSpace = " "
+        method = "GET"
+        version = "HTTP/1.1"
+        url = "/ProxyController/download?cacheId=" + cacheId
+        return b" ".join([method, url, version]) + CRLF + CRLF
+
+    def originHostPort(self, host, port):
+        self.originHost = host
+        self.originPort =port
+
+
+
+
 class Client(Connection):
     """Accepted client connection."""
     
@@ -332,8 +396,11 @@ class Proxy(multiprocessing.Process):
         self.client = client
         self.server = None
          
+        self.cacheServer = None
+
         self.request = HttpParser()
         self.response = HttpParser(HTTP_RESPONSE_PARSER)
+        self.cacheServerResponse = HttpParser(HTTP_RESPONSE_PARSER)
         
         self.connection_established_pkt = CRLF.join([
             b'HTTP/1.1 200 Connection established',
@@ -349,57 +416,7 @@ class Proxy(multiprocessing.Process):
     
     def _is_inactive(self):
         return self._inactive_for() > 30
-    
-    def _process_request_default(self, data): # default method
-        # once we have connection to the server
-        # we don't parse the http request packets
-        # any further, instead just pipe incoming
-        # data from client to server
-        if self.server and not self.server.closed:
-            self.server.queue(data)
-            return
-        
-        # parse http request
-        self.request.parse(data)
-        
-        # once http request parser has reached the state complete
-        # we attempt to establish connection to destination server
-        if self.request.state == HTTP_PARSER_STATE_COMPLETE:
-            logger.debug('request parser is in state complete')
-            
-            if self.request.method == b"CONNECT":
-                host, port = self.request.url.path.split(COLON)
-            elif self.request.url:
-                host = None
-                if self.request.method == "GET":
-                    host, port = CM.cacheLookUp(self.client.addr, self.request.url)
-                if host == None:
-                    host, port = self.request.url.hostname, self.request.url.port if self.request.url.port else 80
-                # print "### request url ###",self.request.url
-                logger.info("%s:%s - %s, redirect %s to %s:%s" % (self.client.addr[0], self.client.addr[1], self.request.url.path, self.request.url.netloc, host, port))
-            
-            self.server = Server(host, port)
-            try:
-                logger.debug('connecting to server %s:%s' % (host, port))
-                self.server.connect()
-                logger.debug('connected to server %s:%s' % (host, port))
-            except Exception as e:
-                self.server.closed = True
-                raise ProxyConnectionFailed(host, port, repr(e))
-            
-            # for http connect methods (https requests)
-            # queue appropriate response for client 
-            # notifying about established connection
-            if self.request.method == b"CONNECT":
-                self.client.queue(self.connection_established_pkt)
-            # for usual http requests, re-build request packet
-            # and queue for the server with appropriate headers
-            else:
-                self.server.queue(self.request.build(
-                    del_headers=[b'proxy-connection', b'connection', b'keep-alive'], 
-                    add_headers=[(b'Connection', b'Close')]
-                ))
-
+  
     def _process_request(self, data):#if http, connect to cachemanage, 
         # once we have connection to the server
         # we don't parse the http request packets
@@ -434,42 +451,87 @@ class Proxy(multiprocessing.Process):
                 # if self.request.method == b"CONNECT":
                 self.client.queue(self.connection_established_pkt)
 
-            elif self.request.url:
-                host = None
+            elif self.request.url: 
+                # find key , connect to cacheManage, receive response ,
+                    # if host and port is right, connect else connect default
+                # if cant find key, connect default
                 if self.request.method == "GET" or self.request.method == "POST":
-                    host, port = CM.cacheLookUp(self.client.addr, self.request.url)
-                if host == None:
                     host, port = self.request.url.hostname, self.request.url.port if self.request.url.port else 80
+                    urlKey = parseURLKey( self.request.url.path)
+                    if urlKey== None:
+                        self._process_request_connect_server(host, port)
+                    else:
+                        #connect to cacheServer
+                        self.cacheServer = CacheManage()
+                        self.cacheServer.originHostPort(host, port)
+                        try:
+                            logger.debug('connecting to server %s:%s' % (host, port))
+                            self.cacheServer.connect()
+                            logger.debug('connected to server %s:%s' % (host, port))
+                        except Exception as e:
+                            self.cacheServer.closed = True
+                            # raise ProxyConnectionFailed(host, port, repr(e))
+                        self.cacheServer.queue(self.cacheServer.buildQueryMethod(urlKey))
+                    
                 # print "### request url ###",self.request.url
-                logger.info("%s:%s - %s, redirect %s to %s:%s" % (self.client.addr[0], self.client.addr[1], self.request.url.path, self.request.url.netloc, host, port))
-            
-                self.server = Server(host, port)
-                try:
-                    logger.debug('connecting to server %s:%s' % (host, port))
-                    self.server.connect()
-                    logger.debug('connected to server %s:%s' % (host, port))
-                except Exception as e:
-                    self.server.closed = True
-                    raise ProxyConnectionFailed(host, port, repr(e))
-            
-            
-                # for usual http requests, re-build request packet
-                # and queue for the server with appropriate headers
-            
-                self.server.queue(self.request.build(
-                    del_headers=[b'proxy-connection', b'connection', b'keep-alive'], 
-                    add_headers=[(b'Connection', b'Close')]
-                )
+                # logger.info("%s:%s - %s, redirect %s to %s:%s" % (self.client.addr[0], self.client.addr[1], self.request.url.path, self.request.url.netloc, host, port))
+
+    def _process_request_connect_server(self, host, port, request_pkt=None):
+        logger.debug('_process_request_connect_server: connecting to server %s:%s' % (host, port))
+        self.server = Server(host, port)
+        try:
+            logger.debug('connecting to server %s:%s' % (host, port))
+            self.server.connect()
+            logger.debug('connected to server %s:%s' % (host, port))
+        except Exception as e:
+            self.server.closed = True
+            raise ProxyConnectionFailed(host, port, repr(e))
+        # for usual http requests, re-build request packet
+        # and queue for the server with appropriate headers    
+        # print self.request.build(
+        #     del_headers=[b'proxy-connection', b'connection', b'keep-alive'], 
+        #     add_headers=[(b'Connection', b'Close')])
+        if request_pkt:
+            self.server.queue( request_pkt)
+        else:    
+            self.server.queue(self.request.build(
+                del_headers=[b'proxy-connection', b'connection', b'keep-alive'], 
+                add_headers=[(b'Connection', b'Close')]))
     
     def _process_response(self, data):
         # parse incoming response packet
         # only for non-https requests
         if not self.request.method == b"CONNECT":
             self.response.parse(data)
-        
+                
         # queue data for client
         self.client.queue(data)
     
+    def _process_cacheServer_response(self, data):
+        # print "#######this is cache server response data:"        
+        self.cacheServerResponse.parse(data)
+        if self.cacheServerResponse.state == HTTP_PARSER_STATE_COMPLETE:
+            print "##","HTTP_PARSER_STATE_COMPLETE"
+            body  = self.cacheServerResponse.body
+            # 
+            # tag_ilg = "illegal request"
+            if  "Cache Miss" in body or "illegal request" in body:
+                print "Cache Miss or illegal request"
+                self._process_request_connect_server( self.cacheServer.originHost, self.cacheServer.originPort)
+            else:
+              tag = "query result<br>"
+              itms = body.split(tag)
+              tagsplit = " | "
+              keys = itms[1].split(tagsplit)
+              print keys
+              server = keys[1]
+              port = int(keys[2])
+              cacheId = keys[0]
+              # self.request.url = "/ProxyController/download?cacheId=" + cacheId
+              request_pkt = self.cacheServer.buildDownloadMethod(cacheId)
+              self._process_request_connect_server(server, port, request_pkt)
+        
+
     def _access_log(self):
         host, port = self.server.addr if self.server else (None, None)
         if self.request.method == b"CONNECT":
@@ -493,6 +555,14 @@ class Proxy(multiprocessing.Process):
             logger.debug('connection to server exists and pending server buffer found, watching server for write ready')
             wlist.append(self.server.conn)
         
+        if self.cacheServer and not self.cacheServer.closed and self.cacheServer.has_buffer():
+            logger.debug('connection to cache server exists and pending cache server buffer found, watching cache server for write ready')
+            wlist.append(self.cacheServer.conn)
+
+        if self.cacheServer and not self.cacheServer.closed:
+            logger.debug('connection to cache server exists, watching cache server for read ready')
+            rlist.append(self.cacheServer.conn)
+
         return rlist, wlist, xlist
     
     def _process_wlist(self, w):
@@ -503,6 +573,10 @@ class Proxy(multiprocessing.Process):
         if self.server and not self.server.closed and self.server.conn in w:
             logger.debug('server is ready for writes, flushing server buffer')
             self.server.flush()
+
+        if self.cacheServer and not self.cacheServer.closed and self.cacheServer.conn in w:
+            logger.debug('cache server is ready for writes, flushing server buffer')
+            self.cacheServer.flush()            
     
     def _process_rlist(self, r):
         if self.client.conn in r:
@@ -539,6 +613,17 @@ class Proxy(multiprocessing.Process):
             else:
                 self._process_response(data)
         
+        if self.cacheServer and not self.cacheServer.closed and self.cacheServer.conn in r:
+            logger.debug('cache server is ready for reads, reading')
+            data = self.cacheServer.recv()
+            self.last_activity = self._now()
+
+            if not data:
+                logger.debug('cache server closed connection')
+                self.cacheServer.close()
+            else:
+                self._process_cacheServer_response(data)
+
         return False
     
     def _process(self):
@@ -618,7 +703,6 @@ class HTTP(TCP):
 
 def main():
     
-    print CM.info()
     parser = argparse.ArgumentParser(
         description='proxy.py v%s' % __version__,
         epilog='Having difficulty using proxy.py? Report at: %s/issues/new' % __homepage__
@@ -627,17 +711,18 @@ def main():
     parser.add_argument('--hostname', default='127.0.0.1', help='Default: 127.0.0.1')
     parser.add_argument('--port', default='8899', help='Default: 8899')
     parser.add_argument('--log-level', default='INFO', help='DEBUG, INFO, WARNING, ERROR, CRITICAL')
-    parser.add_argument('--cache-config', default='cache.conf', help='Default: cache.conf')
+    # parser.add_argument('--cache-config', default='cache.conf', help='Default: cache.conf')
+    parser.add_argument('--cache-server', default='127.0.0.1', help='Default: 127.0.0.1')
+    parser.add_argument('--cache-server-port', default='80', help='Default: 80')
 
     args = parser.parse_args()
     
     logging.basicConfig(level=getattr(logging, args.log_level), format='%(asctime)s - %(levelname)s - pid:%(process)d - %(message)s')
-    if CM.loadConfig( args.cache_config) == False:
-        # CM.saveConfig()
-        return 
-    # print args 
+    
     hostname = args.hostname
     port = int(args.port)
+    cacheServerHost = args.cache_server
+    cacheServerPort = args.cache_server_port
     
     try:
         proxy = HTTP(hostname, port)
@@ -647,3 +732,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+    

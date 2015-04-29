@@ -62,7 +62,7 @@ class CacheManageCenter(object):
 		self.tag = ' | '
 
 		self.loadConfigTime = None
-		self.loadConfig('ProxyController/cacheCenter.conf')
+		# self.loadConfig('ProxyController/cacheCenter.conf')
 
 		# self.loadConfigTime = time.time()
 
@@ -103,7 +103,7 @@ class CacheManageCenter(object):
 				# update the filesize in miss table  ??
 
 		# return (None, None)
-		return "CacheMiss"
+		return None
 
 
 	def compileRegexKey(self):
