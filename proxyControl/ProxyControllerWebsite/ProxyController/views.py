@@ -24,7 +24,7 @@ def hello(request):
 def queryCenter(cacheId):
 	if centerServer and centerServer != "None" and centerServer != "none":
 		conn = httplib.HTTPConnection(centerServer, int(centerServerPort))
-		url = "ProxyController/query?cacheId=" + cacheId
+		url = "/ProxyController/query?cacheId=" + cacheId
 		method = "GET"
 		conn.request(method, url)
 		res = conn.getresponse()
@@ -47,7 +47,22 @@ def query(request):
 	if cacheId:
 		result = CMC.queryCacheID( cacheId)
 		if result == None :
-			result = CMC.queryCenter(cacheId)
+			result = queryCenter(cacheId)
+			if "Cache Miss" not in result:
+				tag = "query result<br>"
+				itms = result.split(tag)
+				tagsplit = " | "
+				keys = itms[1].split(tagsplit)
+				# print keys
+				cacheId = keys[0]
+				server = keys[1]
+				port = keys[2]
+				reqcnt = keys[3]
+				filesize = keys[4]
+				CMC.addEntry(CMC.cachedTab, cacheId, server, port, reqcnt, filesize)
+				result = itms[1]
+				if cacheId in CMC.missTab:
+					del CMC.missTab[cacheId]
 	if result == None:
 		result = "Cache Miss"
 	result = "query result<br>" + result

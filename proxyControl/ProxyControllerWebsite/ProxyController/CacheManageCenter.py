@@ -27,13 +27,14 @@ class TableEntry(object):
 		self.cacheID = cacheID
 		self.server = server
 		self.port = port
-		self.requestCnt = requestCnt
-		self.fileSize = fileSize
+		self.requestCnt = int(requestCnt)
+		self.fileSize = int(fileSize)
 
 	def __str__(self):
+		print self.cacheID, self.server, self.port, self.requestCnt, self.fileSize
 		tag = ' | '
-		return self.cacheID + tag + self.server + tag + str(self.port) + tag \
-   + str(self.requestCnt) + tag + str(self.fileSize)
+		return unicode(self.cacheID + tag + self.server + tag + str(self.port) + tag \
+   + str(self.requestCnt) + tag + str(self.fileSize))
 
 
 class CacheManageCenter(object):
@@ -94,8 +95,8 @@ class CacheManageCenter(object):
 				self.addEntry(
 					self.missTab,
 					cacheID,
-					None,
-					None,
+					'None',
+					'None',
 					1,
 					0,
 					)
