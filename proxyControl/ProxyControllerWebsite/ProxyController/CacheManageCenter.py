@@ -29,12 +29,15 @@ class TableEntry(object):
 		self.port = port
 		self.requestCnt = int(requestCnt)
 		self.fileSize = int(fileSize)
+		self.strstr = None
 
 	def __str__(self):
-		print self.cacheID, self.server, self.port, self.requestCnt, self.fileSize
-		tag = ' | '
-		return unicode(self.cacheID + tag + self.server + tag + str(self.port) + tag \
+		# print self.cacheID, self.server, self.port, self.requestCnt, self.fileSize
+		if self.strstr == None:
+			tag = ' | '
+			self.strstr = unicode(self.cacheID + tag + self.server + tag + str(self.port) + tag \
    + str(self.requestCnt) + tag + str(self.fileSize))
+		return self.strstr
 
 
 class CacheManageCenter(object):

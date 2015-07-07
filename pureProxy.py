@@ -457,12 +457,15 @@ class Proxy(multiprocessing.Process):
                 # if cant find key, connect default
                 if self.request.method == "GET" or self.request.method == "POST":
                     host, port = self.request.url.hostname, self.request.url.port if self.request.url.port else 80
+                    if host == None:
+                        host = "10.0.3.3"
                     urlKey = parseURLKey( self.request.url.path)
                     if urlKey== None:
                         self._process_request_connect_server(host, port)
                     else:
                         #connect to cacheServer
                         self.cacheServer = CacheManage()
+                        print "origin host", host, port
                         self.cacheServer.originHostPort(host, port)
                         try:
                             logger.debug('connecting to server %s:%s' % (host, port))
@@ -516,7 +519,7 @@ class Proxy(multiprocessing.Process):
             # 
             # tag_ilg = "illegal request"
             if  "Cache Miss" in body or "illegal request" in body:
-                print "Cache Miss or illegal request"
+                print "Cache Miss or illegal request, originHost",self.cacheServer.originHost, self.cacheServer.originPort
                 self._process_request_connect_server( self.cacheServer.originHost, self.cacheServer.originPort)
             else:
               tag = "query result<br>"
@@ -629,7 +632,7 @@ class Proxy(multiprocessing.Process):
     def _process(self):
         while True:
             rlist, wlist, xlist = self._get_waitable_lists()
-            r, w, x = select.select(rlist, wlist, xlist, 1)
+            r, w, x = select.select(rlist, wlist, xlist, 0.01 )
             
             self._process_wlist(w)
             if self._process_rlist(r):
